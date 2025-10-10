@@ -1,813 +1,891 @@
-"use client"
+'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { 
+  Building2, 
+  LogOut, 
   TrendingUp, 
   TrendingDown, 
   DollarSign, 
-  CreditCard, 
-  Wallet, 
-  Receipt, 
-  ShoppingCart,
-  PiggyBank,
-  FileText,
-  Calendar,
-  Filter,
-  Download,
   Package,
-  Truck,
-  Upload,
-  FileSpreadsheet,
-  Database,
-  CheckCircle,
-  AlertCircle,
-  X
+  Calendar,
+  BarChart3,
+  PieChart,
+  Calculator,
+  Eye,
+  EyeOff,
+  Save,
+  RefreshCw
 } from 'lucide-react'
-import * as XLSX from 'xlsx'
 
-// Tipos para os dados
-interface Transacao {
-  id: number
-  tipo: 'recebimento' | 'despesa' | 'compra' | 'imposto'
-  descricao: string
-  valor: number
-  data: string
-  categoria: string
+// Tipos para o sistema
+interface Company {
+  id: string
+  name: string
+  email: string
+  password: string
 }
 
-interface DadosFinanceiros {
-  faturamento: number
-  despesas: number
-  saldoBanco: number
-  impostos: number
+interface MonthlyData {
+  month: string
+  year: number
+  receita: number
+  custoVendas: number
+  despesasOperacionais: number
   estoque: number
-  fornecedores: number
+  contasReceber: number
+  contasPagar: number
+  ativo: number
+  passivo: number
 }
 
-// Dados mock iniciais
-const mockDataInicial = {
-  resumo: {
-    faturamento: { valor: 125000, variacao: 12.5 },
-    despesas: { valor: 25000, variacao: -8.2 },
-    saldoBanco: { valor: 80000, variacao: 15.3 },
-    impostos: { valor: 18750, variacao: 5.1 },
-    estoque: { valor: 50000, variacao: 10.5 },
-    fornecedores: { valor: 25000, variacao: -5.2 }
-  },
-  dre: {
-    faturamento: 125000,
-    impostos: 18750,
-    cmv: 60000,
-    despesas: 25000,
-    lucroLiquido: 21250
-  },
-  transacoes: [
-    { id: 1, tipo: 'recebimento' as const, descricao: 'Venda de Produtos', valor: 15000, data: '2024-01-15', categoria: 'Vendas' },
-    { id: 2, tipo: 'despesa' as const, descricao: 'Aluguel Escritório', valor: -3500, data: '2024-01-14', categoria: 'Operacional' },
-    { id: 3, tipo: 'compra' as const, descricao: 'Equipamentos TI', valor: -8000, data: '2024-01-13', categoria: 'Investimento' },
-    { id: 4, tipo: 'recebimento' as const, descricao: 'Prestação de Serviços', valor: 22000, data: '2024-01-12', categoria: 'Serviços' },
-    { id: 5, tipo: 'despesa' as const, descricao: 'Marketing Digital', valor: -2800, data: '2024-01-11', categoria: 'Marketing' },
-    { id: 6, tipo: 'imposto' as const, descricao: 'ISS Municipal', valor: -1200, data: '2024-01-10', categoria: 'Impostos' }
-  ]
+interface AccumulatedData {
+  totalReceita: number
+  totalCustos: number
+  totalDespesas: number
+  lucroAcumulado: number
+  prejuizoAcumulado: number
+  estoqueTotal: number
+  patrimonioLiquido: number
 }
 
-export default function Dashboard() {
-  const [dados, setDados] = useState(mockDataInicial)
-  const [filtroAtivo, setFiltroAtivo] = useState('todos')
-  const [uploadStatus, setUploadStatus] = useState<{tipo: 'success' | 'error' | null, mensagem: string}>({tipo: null, mensagem: ''})
-  const [isUploading, setIsUploading] = useState(false)
+export default function PantaxSystem() {
+  // Estados principais
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [currentCompany, setCurrentCompany] = useState<Company | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   
-  const excelInputRef = useRef<HTMLInputElement>(null)
-  const ofxInputRef = useRef<HTMLInputElement>(null)
-
-  const transacoesFiltradas = dados.transacoes.filter(transacao => {
-    if (filtroAtivo === 'todos') return true
-    return transacao.tipo === filtroAtivo
+  // Estados de login
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
+  
+  // Estados de cadastro
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [registerData, setRegisterData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
+  })
+  
+  // Estados dos dados mensais
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([])
+  const [currentMonthData, setCurrentMonthData] = useState<MonthlyData>({
+    month: `${(new Date().getMonth() + 1).toString().padStart(2, '0')}`,
+    year: new Date().getFullYear(),
+    receita: 0,
+    custoVendas: 0,
+    despesasOperacionais: 0,
+    estoque: 0,
+    contasReceber: 0,
+    contasPagar: 0,
+    ativo: 0,
+    passivo: 0
+  })
+  
+  // Estados acumulados
+  const [accumulatedData, setAccumulatedData] = useState<AccumulatedData>({
+    totalReceita: 0,
+    totalCustos: 0,
+    totalDespesas: 0,
+    lucroAcumulado: 0,
+    prejuizoAcumulado: 0,
+    estoqueTotal: 0,
+    patrimonioLiquido: 0
   })
 
-  const formatarMoeda = (valor: number) => {
+  // Empresas cadastradas (simulação - em produção seria banco de dados)
+  const [companies] = useState<Company[]>([
+    {
+      id: '1',
+      name: 'Empresa Demo',
+      email: 'demo@empresa.com',
+      password: '123456'
+    }
+  ])
+
+  // Formatação de moeda brasileira
+  const formatCurrency = (value: number): string => {
+    if (isNaN(value) || value === null || value === undefined) return 'R$ 0,00'
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(Math.abs(valor))
+    }).format(value)
   }
 
-  const obterIconeTransacao = (tipo: string) => {
-    switch (tipo) {
-      case 'recebimento': return <TrendingUp className="w-4 h-4 text-emerald-600" />
-      case 'despesa': return <TrendingDown className="w-4 h-4 text-red-600" />
-      case 'compra': return <ShoppingCart className="w-4 h-4 text-blue-600" />
-      case 'imposto': return <FileText className="w-4 h-4 text-orange-600" />
-      default: return <DollarSign className="w-4 h-4" />
-    }
+  // Parse de valor monetário
+  const parseCurrency = (value: string): number => {
+    if (!value || value === '') return 0
+    const cleanValue = value.replace(/[^\d,.-]/g, '').replace(',', '.')
+    const numValue = parseFloat(cleanValue)
+    return isNaN(numValue) ? 0 : numValue
   }
 
-  const obterCorTipo = (tipo: string) => {
-    switch (tipo) {
-      case 'recebimento': return 'bg-emerald-100 text-emerald-800 border-emerald-200'
-      case 'despesa': return 'bg-red-100 text-red-800 border-red-200'
-      case 'compra': return 'bg-blue-100 text-blue-800 border-blue-200'
-      case 'imposto': return 'bg-orange-100 text-orange-800 border-orange-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
-    }
-  }
-
-  // Função para processar arquivo Excel
-  const processarExcel = async (file: File) => {
-    setIsUploading(true)
+  // Função de login
+  const handleLogin = async () => {
+    setIsLoading(true)
+    setLoginError('')
+    
     try {
-      const data = await file.arrayBuffer()
-      const workbook = XLSX.read(data)
-      const sheetName = workbook.SheetNames[0]
-      const worksheet = workbook.Sheets[sheetName]
-      const jsonData = XLSX.utils.sheet_to_json(worksheet)
-
-      // Processar dados do Excel
-      const novasTransacoes: Transacao[] = []
-      let novosDados: Partial<DadosFinanceiros> = {}
-
-      jsonData.forEach((row: any, index) => {
-        // Verificar se é uma linha de dados financeiros resumidos
-        if (row.Categoria && row.Valor) {
-          const categoria = String(row.Categoria).toLowerCase()
-          const valor = parseFloat(String(row.Valor).replace(/[^\d.-]/g, '')) || 0
-
-          if (categoria.includes('faturamento') || categoria.includes('receita')) {
-            novosDados.faturamento = valor
-          } else if (categoria.includes('despesa')) {
-            novosDados.despesas = valor
-          } else if (categoria.includes('banco') || categoria.includes('saldo')) {
-            novosDados.saldoBanco = valor
-          } else if (categoria.includes('imposto')) {
-            novosDados.impostos = valor
-          } else if (categoria.includes('estoque')) {
-            novosDados.estoque = valor
-          } else if (categoria.includes('fornecedor')) {
-            novosDados.fornecedores = valor
-          }
-        }
-
-        // Verificar se é uma transação detalhada
-        if (row.Descricao && row.Valor && row.Data) {
-          const valor = parseFloat(String(row.Valor).replace(/[^\d.-]/g, '')) || 0
-          let tipo: 'recebimento' | 'despesa' | 'compra' | 'imposto' = 'despesa'
-          
-          if (valor > 0) {
-            tipo = 'recebimento'
-          } else if (String(row.Tipo || row.Categoria || '').toLowerCase().includes('compra')) {
-            tipo = 'compra'
-          } else if (String(row.Tipo || row.Categoria || '').toLowerCase().includes('imposto')) {
-            tipo = 'imposto'
-          }
-
-          novasTransacoes.push({
-            id: dados.transacoes.length + index + 1,
-            tipo,
-            descricao: String(row.Descricao),
-            valor,
-            data: new Date(row.Data).toISOString().split('T')[0],
-            categoria: String(row.Categoria || 'Geral')
-          })
-        }
-      })
-
-      // Atualizar estado com novos dados
-      setDados(prev => ({
-        ...prev,
-        resumo: {
-          faturamento: { valor: novosDados.faturamento || prev.resumo.faturamento.valor, variacao: 0 },
-          despesas: { valor: novosDados.despesas || prev.resumo.despesas.valor, variacao: 0 },
-          saldoBanco: { valor: novosDados.saldoBanco || prev.resumo.saldoBanco.valor, variacao: 0 },
-          impostos: { valor: novosDados.impostos || prev.resumo.impostos.valor, variacao: 0 },
-          estoque: { valor: novosDados.estoque || prev.resumo.estoque.valor, variacao: 0 },
-          fornecedores: { valor: novosDados.fornecedores || prev.resumo.fornecedores.valor, variacao: 0 }
-        },
-        transacoes: [...prev.transacoes, ...novasTransacoes],
-        dre: {
-          faturamento: novosDados.faturamento || prev.dre.faturamento,
-          impostos: novosDados.impostos || prev.dre.impostos,
-          cmv: prev.dre.cmv,
-          despesas: novosDados.despesas || prev.dre.despesas,
-          lucroLiquido: (novosDados.faturamento || prev.dre.faturamento) - 
-                       (novosDados.impostos || prev.dre.impostos) - 
-                       prev.dre.cmv - 
-                       (novosDados.despesas || prev.dre.despesas)
-        }
-      }))
-
-      setUploadStatus({
-        tipo: 'success',
-        mensagem: `Excel processado com sucesso! ${novasTransacoes.length} transações adicionadas.`
-      })
-
+      const company = companies.find(c => c.email === loginEmail && c.password === loginPassword)
+      if (company) {
+        setCurrentCompany(company)
+        setIsLoggedIn(true)
+        await loadCompanyData(company.id)
+      } else {
+        setLoginError('Email ou senha incorretos')
+      }
     } catch (error) {
-      setUploadStatus({
-        tipo: 'error',
-        mensagem: 'Erro ao processar arquivo Excel. Verifique o formato dos dados.'
-      })
+      setLoginError('Erro ao fazer login. Tente novamente.')
     } finally {
-      setIsUploading(false)
+      setIsLoading(false)
     }
   }
 
-  // Função para processar arquivo OFX
-  const processarOFX = async (file: File) => {
-    setIsUploading(true)
+  // Função de logout
+  const handleLogout = () => {
+    setIsLoggedIn(false)
+    setCurrentCompany(null)
+    setLoginEmail('')
+    setLoginPassword('')
+    setMonthlyData([])
+    setCurrentMonthData({
+      month: `${(new Date().getMonth() + 1).toString().padStart(2, '0')}`,
+      year: new Date().getFullYear(),
+      receita: 0,
+      custoVendas: 0,
+      despesasOperacionais: 0,
+      estoque: 0,
+      contasReceber: 0,
+      contasPagar: 0,
+      ativo: 0,
+      passivo: 0
+    })
+  }
+
+  // Carregar dados da empresa
+  const loadCompanyData = async (companyId: string) => {
     try {
-      const text = await file.text()
-      
-      // Parser simples para OFX (formato básico)
-      const transacoes: Transacao[] = []
-      let saldoAtual = 0
-      
-      // Extrair saldo
-      const saldoMatch = text.match(/<BALAMT>([-\d.]+)/i)
-      if (saldoMatch) {
-        saldoAtual = parseFloat(saldoMatch[1])
+      const savedData = localStorage.getItem(`pantax_${companyId}`)
+      if (savedData) {
+        const data = JSON.parse(savedData)
+        setMonthlyData(data.monthlyData || [])
       }
-
-      // Extrair transações
-      const transacaoRegex = /<STMTTRN>(.*?)<\/STMTTRN>/gis
-      const matches = text.match(transacaoRegex)
-
-      if (matches) {
-        matches.forEach((match, index) => {
-          const valorMatch = match.match(/<TRNAMT>([-\d.]+)/i)
-          const dataMatch = match.match(/<DTPOSTED>(\d{8})/i)
-          const descMatch = match.match(/<MEMO>(.*?)</i) || match.match(/<NAME>(.*?)</i)
-          
-          if (valorMatch && dataMatch && descMatch) {
-            const valor = parseFloat(valorMatch[1])
-            const data = dataMatch[1]
-            const dataFormatada = `${data.substring(0,4)}-${data.substring(4,6)}-${data.substring(6,8)}`
-            
-            transacoes.push({
-              id: dados.transacoes.length + index + 1,
-              tipo: valor > 0 ? 'recebimento' : 'despesa',
-              descricao: descMatch[1].trim(),
-              valor,
-              data: dataFormatada,
-              categoria: 'Bancária'
-            })
-          }
-        })
-      }
-
-      // Atualizar dados
-      setDados(prev => ({
-        ...prev,
-        resumo: {
-          ...prev.resumo,
-          saldoBanco: { valor: saldoAtual, variacao: 0 }
-        },
-        transacoes: [...prev.transacoes, ...transacoes]
-      }))
-
-      setUploadStatus({
-        tipo: 'success',
-        mensagem: `OFX processado com sucesso! ${transacoes.length} transações bancárias adicionadas. Saldo atualizado: ${formatarMoeda(saldoAtual)}`
-      })
-
     } catch (error) {
-      setUploadStatus({
-        tipo: 'error',
-        mensagem: 'Erro ao processar arquivo OFX. Verifique se o arquivo está no formato correto.'
-      })
+      console.error('Erro ao carregar dados:', error)
+    }
+  }
+
+  // Salvar dados da empresa
+  const saveCompanyData = () => {
+    if (currentCompany) {
+      try {
+        const dataToSave = {
+          monthlyData,
+          lastUpdated: new Date().toISOString()
+        }
+        localStorage.setItem(`pantax_${currentCompany.id}`, JSON.stringify(dataToSave))
+      } catch (error) {
+        console.error('Erro ao salvar dados:', error)
+      }
+    }
+  }
+
+  // Calcular dados acumulados
+  const calculateAccumulated = () => {
+    const accumulated = monthlyData.reduce((acc, data) => {
+      const lucroMensal = (data.receita || 0) - (data.custoVendas || 0) - (data.despesasOperacionais || 0)
+      
+      return {
+        totalReceita: acc.totalReceita + (data.receita || 0),
+        totalCustos: acc.totalCustos + (data.custoVendas || 0),
+        totalDespesas: acc.totalDespesas + (data.despesasOperacionais || 0),
+        lucroAcumulado: lucroMensal > 0 ? acc.lucroAcumulado + lucroMensal : acc.lucroAcumulado,
+        prejuizoAcumulado: lucroMensal < 0 ? acc.prejuizoAcumulado + Math.abs(lucroMensal) : acc.prejuizoAcumulado,
+        estoqueTotal: acc.estoqueTotal + (data.estoque || 0),
+        patrimonioLiquido: acc.patrimonioLiquido + ((data.ativo || 0) - (data.passivo || 0))
+      }
+    }, {
+      totalReceita: 0,
+      totalCustos: 0,
+      totalDespesas: 0,
+      lucroAcumulado: 0,
+      prejuizoAcumulado: 0,
+      estoqueTotal: 0,
+      patrimonioLiquido: 0
+    })
+    
+    setAccumulatedData(accumulated)
+  }
+
+  // Salvar dados do mês atual
+  const saveCurrentMonth = () => {
+    setIsLoading(true)
+    try {
+      const existingIndex = monthlyData.findIndex(
+        data => data.month === currentMonthData.month && data.year === currentMonthData.year
+      )
+      
+      let newMonthlyData
+      if (existingIndex >= 0) {
+        newMonthlyData = [...monthlyData]
+        newMonthlyData[existingIndex] = { ...currentMonthData }
+      } else {
+        newMonthlyData = [...monthlyData, { ...currentMonthData }]
+      }
+      
+      setMonthlyData(newMonthlyData)
+    } catch (error) {
+      console.error('Erro ao salvar período:', error)
     } finally {
-      setIsUploading(false)
+      setIsLoading(false)
     }
   }
 
-  const handleExcelUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      processarExcel(file)
+  // Atualizar campo com formatação de moeda
+  const updateCurrencyField = (field: keyof MonthlyData, value: string) => {
+    const numericValue = parseCurrency(value)
+    setCurrentMonthData(prev => ({
+      ...prev,
+      [field]: numericValue
+    }))
+  }
+
+  // Carregar dados do mês selecionado
+  const loadSelectedMonth = () => {
+    const monthKey = selectedMonth.toString().padStart(2, '0')
+    const existingData = monthlyData.find(
+      data => data.month === monthKey && data.year === selectedYear
+    )
+    
+    if (existingData) {
+      setCurrentMonthData({ ...existingData })
+    } else {
+      setCurrentMonthData({
+        month: monthKey,
+        year: selectedYear,
+        receita: 0,
+        custoVendas: 0,
+        despesasOperacionais: 0,
+        estoque: 0,
+        contasReceber: 0,
+        contasPagar: 0,
+        ativo: 0,
+        passivo: 0
+      })
     }
   }
 
-  const handleOFXUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      processarOFX(file)
-    }
-  }
+  // Effects
+  useEffect(() => {
+    calculateAccumulated()
+    saveCompanyData()
+  }, [monthlyData])
 
-  const fecharAlert = () => {
-    setUploadStatus({tipo: null, mensagem: ''})
-  }
+  useEffect(() => {
+    loadSelectedMonth()
+  }, [selectedMonth, selectedYear, monthlyData])
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              Dashboard Financeiro
-            </h1>
-            <p className="text-gray-600 mt-1">Visão completa das suas finanças com importação automática</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="gap-2">
-              <Calendar className="w-4 h-4" />
-              Este Mês
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Download className="w-4 h-4" />
-              Exportar
-            </Button>
-          </div>
-        </div>
-
-        {/* Alert de Status */}
-        {uploadStatus.tipo && (
-          <Alert className={`${uploadStatus.tipo === 'success' ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {uploadStatus.tipo === 'success' ? 
-                  <CheckCircle className="w-4 h-4 text-emerald-600" /> : 
-                  <AlertCircle className="w-4 h-4 text-red-600" />
-                }
-                <AlertDescription className={uploadStatus.tipo === 'success' ? 'text-emerald-800' : 'text-red-800'}>
-                  {uploadStatus.mensagem}
-                </AlertDescription>
+  // Tela de login
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-2xl">
+          <CardHeader className="text-center">
+            <div className="mx-auto w-16 h-16 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mb-4">
+              <Building2 className="w-8 h-8 text-white" />
+            </div>
+            <CardTitle className="text-2xl font-bold text-gray-800">
+              PANTAX Sistema
+            </CardTitle>
+            <p className="text-gray-600">Gestão Financeira Empresarial</p>
+          </CardHeader>
+          
+          <CardContent className="space-y-4">
+            {!isRegistering ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email da Empresa</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="empresa@exemplo.com"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    disabled={isLoading}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="password">Senha</Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Digite sua senha"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      disabled={isLoading}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3"
+                      onClick={() => setShowPassword(!showPassword)}
+                      disabled={isLoading}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </div>
+                
+                {loginError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-600">{loginError}</p>
+                  </div>
+                )}
+                
+                <Button 
+                  onClick={handleLogin}
+                  disabled={isLoading || !loginEmail || !loginPassword}
+                  className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
+                >
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Entrando...
+                    </>
+                  ) : (
+                    'Entrar'
+                  )}
+                </Button>
+                
+                <div className="text-center">
+                  <Button
+                    variant="link"
+                    onClick={() => setIsRegistering(true)}
+                    className="text-sm text-blue-600"
+                    disabled={isLoading}
+                  >
+                    Cadastrar nova empresa
+                  </Button>
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-700 font-medium">Demo:</p>
+                  <p className="text-xs text-blue-600">Email: demo@empresa.com</p>
+                  <p className="text-xs text-blue-600">Senha: 123456</p>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="companyName">Nome da Empresa</Label>
+                  <Input
+                    id="companyName"
+                    placeholder="Minha Empresa Ltda"
+                    value={registerData.name}
+                    onChange={(e) => setRegisterData(prev => ({...prev, name: e.target.value}))}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="registerEmail">Email</Label>
+                  <Input
+                    id="registerEmail"
+                    type="email"
+                    placeholder="contato@minhaempresa.com"
+                    value={registerData.email}
+                    onChange={(e) => setRegisterData(prev => ({...prev, email: e.target.value}))}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="registerPassword">Senha</Label>
+                  <Input
+                    id="registerPassword"
+                    type="password"
+                    placeholder="Mínimo 6 caracteres"
+                    value={registerData.password}
+                    onChange={(e) => setRegisterData(prev => ({...prev, password: e.target.value}))}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirmar Senha</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    placeholder="Digite a senha novamente"
+                    value={registerData.confirmPassword}
+                    onChange={(e) => setRegisterData(prev => ({...prev, confirmPassword: e.target.value}))}
+                  />
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsRegistering(false)}
+                    className="flex-1"
+                  >
+                    Voltar
+                  </Button>
+                  <Button
+                    className="flex-1 bg-gradient-to-r from-green-500 to-green-600"
+                    onClick={() => {
+                      alert('Funcionalidade de cadastro será implementada')
+                    }}
+                  >
+                    Cadastrar
+                  </Button>
+                </div>
               </div>
-              <Button variant="ghost" size="sm" onClick={fecharAlert}>
-                <X className="w-4 h-4" />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Tela principal do sistema
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                <Building2 className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">PANTAX</h1>
+                <p className="text-sm text-gray-600">{currentCompany?.name}</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                {currentCompany?.email}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="flex items-center space-x-2"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sair</span>
               </Button>
             </div>
-          </Alert>
-        )}
+          </div>
+        </div>
+      </div>
 
-        {/* Sistema de Upload */}
-        <Card className="shadow-xl border-0 bg-gradient-to-r from-indigo-50 to-purple-50">
-          <CardHeader>
-            <CardTitle className="text-xl font-bold text-gray-800 flex items-center gap-2">
-              <Upload className="w-5 h-5" />
-              Importação de Dados
-            </CardTitle>
-            <p className="text-gray-600 text-sm">
-              Importe seus dados financeiros via Excel ou extratos bancários OFX
-            </p>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="excel" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="excel" className="gap-2">
-                  <FileSpreadsheet className="w-4 h-4" />
-                  Excel (.xlsx)
-                </TabsTrigger>
-                <TabsTrigger value="ofx" className="gap-2">
-                  <Database className="w-4 h-4" />
-                  Extrato OFX
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="excel" className="space-y-4">
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-indigo-400 transition-colors">
-                  <FileSpreadsheet className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                    Upload de Planilha Excel
-                  </h3>
-                  <p className="text-gray-500 mb-4 text-sm">
-                    Formato esperado: Colunas "Categoria", "Valor", "Descricao", "Data", "Tipo"
+      {/* KPIs Acumulados */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Receita Acumulada</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {formatCurrency(accumulatedData.totalReceita)}
                   </p>
-                  <input
-                    ref={excelInputRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleExcelUpload}
-                    className="hidden"
-                  />
-                  <Button 
-                    onClick={() => excelInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="gap-2"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {isUploading ? 'Processando...' : 'Selecionar Arquivo Excel'}
-                  </Button>
                 </div>
-                
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-blue-800 mb-2">Formato da Planilha Excel:</h4>
-                  <div className="text-sm text-blue-700 space-y-1">
-                    <p><strong>Categoria:</strong> Faturamento, Despesas, Saldo Banco, Impostos, Estoque, Fornecedores</p>
-                    <p><strong>Valor:</strong> Valores numéricos (positivos para receitas, negativos para gastos)</p>
-                    <p><strong>Descrição:</strong> Descrição da transação</p>
-                    <p><strong>Data:</strong> Data no formato DD/MM/AAAA</p>
-                    <p><strong>Tipo:</strong> Recebimento, Despesa, Compra, Imposto</p>
-                  </div>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="ofx" className="space-y-4">
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-400 transition-colors">
-                  <Database className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                    Upload de Extrato OFX
-                  </h3>
-                  <p className="text-gray-500 mb-4 text-sm">
-                    Arquivo de extrato bancário no formato OFX padrão dos bancos
-                  </p>
-                  <input
-                    ref={ofxInputRef}
-                    type="file"
-                    accept=".ofx"
-                    onChange={handleOFXUpload}
-                    className="hidden"
-                  />
-                  <Button 
-                    onClick={() => ofxInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="gap-2"
-                    variant="secondary"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {isUploading ? 'Processando...' : 'Selecionar Arquivo OFX'}
-                  </Button>
-                </div>
-                
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-purple-800 mb-2">Como obter arquivo OFX:</h4>
-                  <div className="text-sm text-purple-700 space-y-1">
-                    <p>1. Acesse o internet banking do seu banco</p>
-                    <p>2. Vá em "Extratos" ou "Movimentação"</p>
-                    <p>3. Selecione o período desejado</p>
-                    <p>4. Escolha "Exportar" ou "Download" no formato OFX</p>
-                    <p>5. Faça o upload do arquivo aqui</p>
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-
-        {/* Cards de Resumo */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 md:gap-6">
+                <TrendingUp className="w-8 h-8 text-green-500" />
+              </div>
+            </CardContent>
+          </Card>
           
-          {/* Faturamento */}
-          <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-0 shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium opacity-90 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" />
-                Faturamento
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl md:text-3xl font-bold">
-                {formatarMoeda(dados.resumo.faturamento.valor)}
-              </div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-xs opacity-90">
-                  +{dados.resumo.faturamento.variacao}% vs mês anterior
-                </span>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Lucro Acumulado</p>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {formatCurrency(accumulatedData.lucroAcumulado)}
+                  </p>
+                </div>
+                <DollarSign className="w-8 h-8 text-blue-500" />
               </div>
             </CardContent>
           </Card>
-
-          {/* Despesas */}
-          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0 shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium opacity-90 flex items-center gap-2">
-                <TrendingDown className="w-4 h-4" />
-                Despesas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl md:text-3xl font-bold">
-                {formatarMoeda(dados.resumo.despesas.valor)}
-              </div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingDown className="w-3 h-3" />
-                <span className="text-xs opacity-90">
-                  {dados.resumo.despesas.variacao}% vs mês anterior
-                </span>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Prejuízo Acumulado</p>
+                  <p className="text-2xl font-bold text-red-600">
+                    {formatCurrency(accumulatedData.prejuizoAcumulado)}
+                  </p>
+                </div>
+                <TrendingDown className="w-8 h-8 text-red-500" />
               </div>
             </CardContent>
           </Card>
-
-          {/* Saldo Banco */}
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium opacity-90 flex items-center gap-2">
-                <PiggyBank className="w-4 h-4" />
-                Saldo Banco
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl md:text-3xl font-bold">
-                {formatarMoeda(dados.resumo.saldoBanco.valor)}
-              </div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-xs opacity-90">
-                  +{dados.resumo.saldoBanco.variacao}% vs mês anterior
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Impostos */}
-          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0 shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium opacity-90 flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                Impostos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl md:text-3xl font-bold">
-                {formatarMoeda(dados.resumo.impostos.valor)}
-              </div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-xs opacity-90">
-                  +{dados.resumo.impostos.variacao}% vs mês anterior
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Total Estoque */}
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0 shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium opacity-90 flex items-center gap-2">
-                <Package className="w-4 h-4" />
-                Total Estoque
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl md:text-3xl font-bold">
-                {formatarMoeda(dados.resumo.estoque.valor)}
-              </div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-xs opacity-90">
-                  +{dados.resumo.estoque.variacao}% vs mês anterior
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Saldo Devedor Fornecedores */}
-          <Card className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white border-0 shadow-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium opacity-90 flex items-center gap-2">
-                <Truck className="w-4 h-4" />
-                Fornecedores
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl md:text-3xl font-bold">
-                {formatarMoeda(dados.resumo.fornecedores.valor)}
-              </div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingDown className="w-3 h-3" />
-                <span className="text-xs opacity-90">
-                  {dados.resumo.fornecedores.variacao}% vs mês anterior
-                </span>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Estoque Total</p>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {formatCurrency(accumulatedData.estoqueTotal)}
+                  </p>
+                </div>
+                <Package className="w-8 h-8 text-purple-500" />
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* DRE Contábil */}
-        <Card className="shadow-xl border-0">
+        {/* Seletor de Mês/Ano */}
+        <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-xl font-bold text-gray-800">
-              DRE - Demonstrativo de Resultado do Exercício
+            <CardTitle className="flex items-center space-x-2">
+              <Calendar className="w-5 h-5" />
+              <span>Período de Apuração</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center py-3 border-b border-gray-200">
-                <span className="font-medium text-gray-700">Faturamento</span>
-                <span className="font-bold text-emerald-600">{formatarMoeda(dados.dre.faturamento)}</span>
+            <div className="flex items-center space-x-4 flex-wrap gap-2">
+              <div className="flex items-center space-x-2">
+                <Label htmlFor="month">Mês:</Label>
+                <select
+                  id="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {Array.from({length: 12}, (_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {new Date(2024, i).toLocaleDateString('pt-BR', { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="flex justify-between items-center py-3 border-b border-gray-200">
-                <span className="font-medium text-gray-700">(-) Impostos</span>
-                <span className="font-bold text-red-600">-{formatarMoeda(dados.dre.impostos)}</span>
+              
+              <div className="flex items-center space-x-2">
+                <Label htmlFor="year">Ano:</Label>
+                <select
+                  id="year"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {Array.from({length: 5}, (_, i) => (
+                    <option key={2024 + i} value={2024 + i}>
+                      {2024 + i}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="flex justify-between items-center py-3 border-b border-gray-200">
-                <span className="font-medium text-gray-700">(-) CMV (Custo Mercadorias Vendidas)</span>
-                <span className="font-bold text-red-600">-{formatarMoeda(dados.dre.cmv)}</span>
-              </div>
-              <div className="flex justify-between items-center py-3 border-b border-gray-200">
-                <span className="font-medium text-gray-700">(-) Despesas</span>
-                <span className="font-bold text-red-600">-{formatarMoeda(dados.dre.despesas)}</span>
-              </div>
-              <div className="flex justify-between items-center py-3 bg-gray-50 rounded-lg px-4">
-                <span className="font-bold text-gray-800">Lucro Líquido</span>
-                <span className={`font-bold text-xl ${dados.dre.lucroLiquido >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {dados.dre.lucroLiquido >= 0 ? '+' : ''}{formatarMoeda(dados.dre.lucroLiquido)}
-                </span>
-              </div>
+              
+              <Button
+                onClick={saveCurrentMonth}
+                disabled={isLoading}
+                className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
+              >
+                {isLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    Salvar Período
+                  </>
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* Parte Financeira */}
-        <Card className="shadow-xl border-0">
-          <CardHeader>
-            <CardTitle className="text-xl font-bold text-gray-800">
-              Posição Financeira
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600 mb-2">
-                  {formatarMoeda(dados.resumo.saldoBanco.valor)}
-                </div>
-                <div className="text-sm text-gray-600">Saldo Banco</div>
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <TrendingUp className="w-3 h-3 text-emerald-600" />
-                  <span className="text-xs text-emerald-600">
-                    +{dados.resumo.saldoBanco.variacao}%
-                  </span>
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-purple-600 mb-2">
-                  {formatarMoeda(dados.resumo.estoque.valor)}
-                </div>
-                <div className="text-sm text-gray-600">Estoque</div>
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <TrendingUp className="w-3 h-3 text-emerald-600" />
-                  <span className="text-xs text-emerald-600">
-                    +{dados.resumo.estoque.variacao}%
-                  </span>
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-indigo-600 mb-2">
-                  {formatarMoeda(dados.resumo.fornecedores.valor)}
-                </div>
-                <div className="text-sm text-gray-600">Fornecedores a Pagar</div>
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <TrendingDown className="w-3 h-3 text-red-600" />
-                  <span className="text-xs text-red-600">
-                    {dados.resumo.fornecedores.variacao}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Formulário de Dados Mensais */}
+        <Tabs defaultValue="dre" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="dre" className="flex items-center space-x-2">
+              <BarChart3 className="w-4 h-4" />
+              <span>DRE</span>
+            </TabsTrigger>
+            <TabsTrigger value="balanco" className="flex items-center space-x-2">
+              <PieChart className="w-4 h-4" />
+              <span>Balanço</span>
+            </TabsTrigger>
+            <TabsTrigger value="resumo" className="flex items-center space-x-2">
+              <Calculator className="w-4 h-4" />
+              <span>Resumo</span>
+            </TabsTrigger>
+            <TabsTrigger value="historico" className="flex items-center space-x-2">
+              <Calendar className="w-4 h-4" />
+              <span>Histórico</span>
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Transações Recentes */}
-        <Card className="shadow-xl border-0">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <CardTitle className="text-xl font-bold text-gray-800">
-                Transações Recentes ({dados.transacoes.length} total)
-              </CardTitle>
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  variant={filtroAtivo === 'todos' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setFiltroAtivo('todos')}
-                  className="gap-2"
-                >
-                  <Filter className="w-3 h-3" />
-                  Todos
-                </Button>
-                <Button
-                  variant={filtroAtivo === 'recebimento' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setFiltroAtivo('recebimento')}
-                  className="gap-2"
-                >
-                  <Receipt className="w-3 h-3" />
-                  Recebimentos
-                </Button>
-                <Button
-                  variant={filtroAtivo === 'despesa' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setFiltroAtivo('despesa')}
-                  className="gap-2"
-                >
-                  <CreditCard className="w-3 h-3" />
-                  Despesas
-                </Button>
-                <Button
-                  variant={filtroAtivo === 'compra' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setFiltroAtivo('compra')}
-                  className="gap-2"
-                >
-                  <ShoppingCart className="w-3 h-3" />
-                  Compras
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {transacoesFiltradas.map((transacao) => (
-                <div
-                  key={transacao.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-3 mb-2 sm:mb-0">
-                    {obterIconeTransacao(transacao.tipo)}
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {transacao.descricao}
-                      </div>
-                      <div className="text-sm text-gray-500 flex items-center gap-2">
-                        <span>{transacao.data}</span>
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs ${obterCorTipo(transacao.tipo)}`}
-                        >
-                          {transacao.categoria}
-                        </Badge>
-                      </div>
-                    </div>
+          <TabsContent value="dre">
+            <Card>
+              <CardHeader>
+                <CardTitle>Demonstração do Resultado do Exercício</CardTitle>
+                <p className="text-sm text-gray-600">
+                  Período: {new Date(selectedYear, selectedMonth - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="receita">Receita Bruta</Label>
+                    <Input
+                      id="receita"
+                      placeholder="R$ 0,00"
+                      value={formatCurrency(currentMonthData.receita)}
+                      onChange={(e) => updateCurrencyField('receita', e.target.value)}
+                    />
                   </div>
-                  <div className="text-right">
-                    <div className={`text-lg font-bold ${
-                      transacao.valor >= 0 ? 'text-emerald-600' : 'text-red-600'
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="custoVendas">Custo das Vendas</Label>
+                    <Input
+                      id="custoVendas"
+                      placeholder="R$ 0,00"
+                      value={formatCurrency(currentMonthData.custoVendas)}
+                      onChange={(e) => updateCurrencyField('custoVendas', e.target.value)}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="despesasOperacionais">Despesas Operacionais</Label>
+                    <Input
+                      id="despesasOperacionais"
+                      placeholder="R$ 0,00"
+                      value={formatCurrency(currentMonthData.despesasOperacionais)}
+                      onChange={(e) => updateCurrencyField('despesasOperacionais', e.target.value)}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Lucro/Prejuízo do Período</Label>
+                    <div className={`p-3 rounded-md font-bold text-lg ${
+                      (currentMonthData.receita - currentMonthData.custoVendas - currentMonthData.despesasOperacionais) >= 0 
+                        ? 'bg-green-50 text-green-700' 
+                        : 'bg-red-50 text-red-700'
                     }`}>
-                      {transacao.valor >= 0 ? '+' : ''}{formatarMoeda(transacao.valor)}
+                      {formatCurrency(currentMonthData.receita - currentMonthData.custoVendas - currentMonthData.despesasOperacionais)}
                     </div>
-                    <Badge 
-                      variant="outline" 
-                      className={`text-xs ${obterCorTipo(transacao.tipo)}`}
-                    >
-                      {transacao.tipo}
-                    </Badge>
                   </div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* Resumo Rápido */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-          <Card className="shadow-lg border-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                <Wallet className="w-4 h-4" />
-                Fluxo de Caixa
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-emerald-600">
-                +{formatarMoeda(dados.resumo.faturamento.valor - dados.resumo.despesas.valor)}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Entrada - Saída</p>
-            </CardContent>
-          </Card>
+          <TabsContent value="balanco">
+            <Card>
+              <CardHeader>
+                <CardTitle>Balanço Patrimonial</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-800">ATIVO</h3>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="estoque">Estoque</Label>
+                      <Input
+                        id="estoque"
+                        placeholder="R$ 0,00"
+                        value={formatCurrency(currentMonthData.estoque)}
+                        onChange={(e) => updateCurrencyField('estoque', e.target.value)}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="contasReceber">Contas a Receber</Label>
+                      <Input
+                        id="contasReceber"
+                        placeholder="R$ 0,00"
+                        value={formatCurrency(currentMonthData.contasReceber)}
+                        onChange={(e) => updateCurrencyField('contasReceber', e.target.value)}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="ativo">Ativo Total</Label>
+                      <Input
+                        id="ativo"
+                        placeholder="R$ 0,00"
+                        value={formatCurrency(currentMonthData.ativo)}
+                        onChange={(e) => updateCurrencyField('ativo', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-800">PASSIVO</h3>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="contasPagar">Contas a Pagar</Label>
+                      <Input
+                        id="contasPagar"
+                        placeholder="R$ 0,00"
+                        value={formatCurrency(currentMonthData.contasPagar)}
+                        onChange={(e) => updateCurrencyField('contasPagar', e.target.value)}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="passivo">Passivo Total</Label>
+                      <Input
+                        id="passivo"
+                        placeholder="R$ 0,00"
+                        value={formatCurrency(currentMonthData.passivo)}
+                        onChange={(e) => updateCurrencyField('passivo', e.target.value)}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Patrimônio Líquido</Label>
+                      <div className={`p-3 rounded-md font-bold text-lg ${
+                        (currentMonthData.ativo - currentMonthData.passivo) >= 0 
+                          ? 'bg-blue-50 text-blue-700' 
+                          : 'bg-red-50 text-red-700'
+                      }`}>
+                        {formatCurrency(currentMonthData.ativo - currentMonthData.passivo)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-          <Card className="shadow-lg border-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                <Receipt className="w-4 h-4" />
-                Total Recebimentos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
-                {formatarMoeda(
-                  dados.transacoes
-                    .filter(t => t.tipo === 'recebimento')
-                    .reduce((acc, t) => acc + t.valor, 0)
+          <TabsContent value="resumo">
+            <Card>
+              <CardHeader>
+                <CardTitle>Resumo Acumulado</CardTitle>
+                <p className="text-sm text-gray-600">Consolidação de todos os períodos</p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-green-800 mb-2">Receitas</h4>
+                    <p className="text-2xl font-bold text-green-600">
+                      {formatCurrency(accumulatedData.totalReceita)}
+                    </p>
+                  </div>
+                  
+                  <div className="bg-red-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-red-800 mb-2">Custos</h4>
+                    <p className="text-2xl font-bold text-red-600">
+                      {formatCurrency(accumulatedData.totalCustos)}
+                    </p>
+                  </div>
+                  
+                  <div className="bg-orange-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-orange-800 mb-2">Despesas</h4>
+                    <p className="text-2xl font-bold text-orange-600">
+                      {formatCurrency(accumulatedData.totalDespesas)}
+                    </p>
+                  </div>
+                  
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-blue-800 mb-2">Lucro Acumulado</h4>
+                    <p className="text-2xl font-bold text-blue-600">
+                      {formatCurrency(accumulatedData.lucroAcumulado)}
+                    </p>
+                  </div>
+                  
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-purple-800 mb-2">Prejuízo Acumulado</h4>
+                    <p className="text-2xl font-bold text-purple-600">
+                      {formatCurrency(accumulatedData.prejuizoAcumulado)}
+                    </p>
+                  </div>
+                  
+                  <div className="bg-indigo-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-indigo-800 mb-2">Patrimônio Líquido</h4>
+                    <p className="text-2xl font-bold text-indigo-600">
+                      {formatCurrency(accumulatedData.patrimonioLiquido)}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="historico">
+            <Card>
+              <CardHeader>
+                <CardTitle>Histórico de Períodos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {monthlyData.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Nenhum período salvo ainda</p>
+                    <p className="text-sm">Preencha os dados e salve um período para ver o histórico</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse border border-gray-200">
+                      <thead>
+                        <tr className="bg-gray-50">
+                          <th className="border border-gray-200 p-3 text-left">Período</th>
+                          <th className="border border-gray-200 p-3 text-right">Receita</th>
+                          <th className="border border-gray-200 p-3 text-right">Custos</th>
+                          <th className="border border-gray-200 p-3 text-right">Despesas</th>
+                          <th className="border border-gray-200 p-3 text-right">Resultado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthlyData.map((data, index) => {
+                          const resultado = (data.receita || 0) - (data.custoVendas || 0) - (data.despesasOperacionais || 0)
+                          return (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="border border-gray-200 p-3">
+                                {new Date(data.year, parseInt(data.month) - 1).toLocaleDateString('pt-BR', { 
+                                  month: 'long', 
+                                  year: 'numeric' 
+                                })}
+                              </td>
+                              <td className="border border-gray-200 p-3 text-right">
+                                {formatCurrency(data.receita || 0)}
+                              </td>
+                              <td className="border border-gray-200 p-3 text-right">
+                                {formatCurrency(data.custoVendas || 0)}
+                              </td>
+                              <td className="border border-gray-200 p-3 text-right">
+                                {formatCurrency(data.despesasOperacionais || 0)}
+                              </td>
+                              <td className={`border border-gray-200 p-3 text-right font-bold ${
+                                resultado >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {formatCurrency(resultado)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Este período</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4" />
-                Total Compras
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-purple-600">
-                {formatarMoeda(
-                  Math.abs(dados.transacoes
-                    .filter(t => t.tipo === 'compra')
-                    .reduce((acc, t) => acc + t.valor, 0))
-                )}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">Este período</p>
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )
